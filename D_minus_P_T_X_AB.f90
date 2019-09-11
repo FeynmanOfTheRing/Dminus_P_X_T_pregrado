@@ -4,10 +4,10 @@ module subrutinas_funciones_parametros
     real(8),parameter ::PI=4*atan(1.),h=0.06,m_o=9.1d-31!0.06 radianes !parametros del problema
     real(8),parameter :: S11=1.16d-3,S12=-3.7d-4
     real(8):: d=2d0, R1=1, R2=1,dseta=1,R
-    real(8):: mu,Ecm,Er,En,En_ant,Uee,Ue1d,Ue2d,phi,tol,Fdospi,Fcero,F,Fant,yini!masa reducida, energías, potenciales,to
-    real(8)::X=0,P=30,Pfin,Pini,Pstep,T=4
+    real(8):: mu,Etol,Er,En,En_ant,Uee,Ue1d,Ue2d,phi,tol,Fdospi,Fcero,F,Fant,yini!masa reducida, energías, potenciales,to
+    real(8)::X=0,P=0,Pfin,Pini,Pstep,T=4d0
     real(16)::cte_norm
-    real(8):: GAM,gam_ini=0d0,gam_fin=3.5d0,gam_step=0.01d0
+    real(8):: GAM,gam_ini=0d0,gam_fin=3.5d0,gam_step=0.1d0
     real(8),dimension(3):: vector_entra,vector_sale!vectores que utilizo para hacer RK4
     real(8),DIMENSION(420)::psi_value
     INTEGER :: i,j,k,bandera_imprimir,l
@@ -119,7 +119,7 @@ subroutine EDO(vector_in,vector_out)!campo vectorial del problema para realizar 
     
     vector_out(1)=1
     vector_out(2)=vector_in(3)
-    vector_out(3)= ( f_(X,P,T)/((-1d0)*mu) )*( En-(Uee+Ue1d+Ue2d)/g_(P,T) )*vector_in(2)
+    vector_out(3)= ( f_(X,P,T)/((-1d0)*mu) )*( En-(Uee)/g_(P,T) )*vector_in(2)
     vector_out=h*vector_out
 end subroutine
 !***************Biseccion***************!
@@ -162,9 +162,8 @@ subroutine Rungekutta_anillo
             Fdospi=vector_sale(2)
             i=i+1
             psi_value(i)=vector_sale(2)
-            
-            call integration_simpson(cte_norm)
         END DO
+        call integration_simpson(cte_norm)
         WRITE(*,*) cte_norm
     end if
     
@@ -231,8 +230,8 @@ program D_minus_P_T_X
     R2=R2*rho(P)
     R=R1
     mu = (1d0/(R1)**2d0)+(1d0/(R2)**2d0)  !masa reducida
-    Ue1d = -2./sqrt(R1**2+dseta**2)!potenciales con la impureza
-    Ue2d = -2./sqrt(R2**2+(d-dseta)**2)
+    Ue1d = 2d0/sqrt(R1**2+dseta**2)!potenciales con la impureza
+    Ue2d = 2d0/sqrt(R2**2+(d-dseta)**2)
     tol=1e-9
     vector_sale=0                  !inicio el vector que sale
     yini=0.001d0
@@ -243,115 +242,118 @@ program D_minus_P_T_X
     l=0
     bandera_imprimir=0
     
+    
+    Eini=-5d0               !energías inicial y final
+    Efin=15d0
     write(*,*) En,Efin,"energía inicial y final"
-    Eini=-10d0               !energías inicial y final
-    Efin=12d0
-                 !aquí guardo la función para graficar
+    !aquí guardo la función para graficar
     open(unit=1,file ="funcion_base.txt")
     open(unit=2,file="psi.txt")
     open(unit=4, file="energias.txt")
     open(unit=3, file="energias_2.txt")  
     OPEN(unit=5, file="energias_3.txt")
     OPEN(unit=7, file="segundo_exi.txt")
-    GAM=gam_ini
-    M_cm=-1
     
-    Do while(GAM.le.gam_fin)
-        
-        GAM=GAM+gam_step
-        bandera_imprimir=0
-        ndata=int(Efin-Eini)*1d4 !# de datos de energía
-        Estep=(Efin-Eini)/real(ndata)  !paso
-        En=Eini
-        
-        k=0
-        j=0
-        Do while(En.le.Efin) !Ciclo que varia las energías
+    M_cm=-1
+    Do M_cm=-3,0
+        GAM=gam_ini
+        Do while(GAM.le.gam_fin)
             
-            call Rungekutta_anillo
-            F=(Fcero-Fdospi)
-            if((F*Fant.lt.0d0)) then
-                j=j+1
-                bandera_imprimir=0
-                call biseccion(En_ant,En,Fant,F,En)
+            GAM=GAM+gam_step
+            bandera_imprimir=0
+            ndata=int(Efin-Eini)*1d4 !# de datos de energía
+            Estep=(Efin-Eini)/real(ndata)  !paso
+            En=Eini
+            
+            k=0
+            j=0
+            Do while(En.le.Efin) !Ciclo que varia las energías
+                
                 call Rungekutta_anillo
-                if(abs(Fcero-Fdospi) .lt. tol) then
-                       
-                    k=k+1
-                    Ecm=((real(M_cm)**2)/(f_(X,P,T)*(R1**2+R2**2)) &
-                    +  real(M_cm)*GAM/f_(X,P,T)  &
-                    +  ((GAM**2)/(f_(X,P,T)*4d0))*(R1**2+R2**2)&
-                    -(Ue1d+Ue2d)/(g_(P,T)) + En)*R**2
-                    WRITE(*,*) "E+Ecm", En
-                    if(k.eq.1) then
-                        write(4,*) Ecm,GAM !escribo los valores E vs R
-                        write(*,*) Ecm,GAM ,"k=1"
-                        bandera_imprimir=1
-                        call Rungekutta_anillo
-                    end if
-                    if(k.eq.2) then
-                        write(3,*) Ecm,GAM !escribo los valores E vs R
-                        write(*,*) Ecm,GAM ,"k=2"
-                        bandera_imprimir=2
-                        call Rungekutta_anillo
-                    end if              
-                    if(k.eq.3) then
-                        write(5,*) Ecm,GAM !escribo los valores E vs R
-                        write(*,*) Ecm,GAM ,"k=3"
-                        bandera_imprimir=3
-                        call Rungekutta_anillo
-                        exit
-                    end if
-                    
+                F=(Fcero-Fdospi)
+                if((F*Fant.lt.0d0)) then
+                    j=j+1
+                    bandera_imprimir=0
+                    call biseccion(En_ant,En,Fant,F,En)
                     call Rungekutta_anillo
-                    
-                    Fant=F
-                    En_ant=En
-                    j=0
-                    En=En+Estep
-                else if(j.gt.5d4)then
-                    k=k+1
-                    write(*,*) "la biseccion no converge satisfactoriamente"
-                    
-                    Ecm=((real(M_cm)**2)/(f_(X,P,T)*(R1**2+R2**2)) &
-                    +  real(M_cm)*GAM/f_(X,P,T)  &
-                    +  ((GAM**2)/(f_(X,P,T)*4d0))*(R1**2+R2**2)&
-                    -(Ue1d+Ue2d)/(g_(P,T)) + En)*R**2
-                    write(*,*) "un aproximado del autovalor es: ", En+Ecm
-                    if(k.eq.1) then
-                        write(4,*) Ecm,GAM !escribo los valores E vs R
-                        write(*,*) Ecm,GAM ,"k=1"
-                        bandera_imprimir=1
-                        call Rungekutta_anillo
-                    end if
-                    if(k.eq.2) then
-                        write(3,*) Ecm,GAM !escribo los valores E vs R
-                        write(*,*) Ecm,GAM,"k=2"
-                        bandera_imprimir=2
+                    if(abs(Fcero-Fdospi) .lt. tol) then
+                        
+                        k=k+1
+                        Etol=((real(M_cm)**2)/(f_(X,P,T)*(R1**2+R2**2)) &
+                        +  real(M_cm)*GAM/f_(X,P,T)  &
+                        +  ((GAM**2)/(f_(X,P,T)*4d0))*(R1**2+R2**2)&
+                        -(Ue1d+Ue2d)/(g_(P,T)) + En)*R**2
+                        WRITE(*,*) "E+Ecm", En
+                        if(k.eq.1) then
+                            write(4,*) Etol,GAM !escribo los valores E vs R
+                            write(*,*) Etol,GAM ,"k=1"
+                            bandera_imprimir=1
+                            call Rungekutta_anillo
+                        end if
+                        if(k.eq.2) then
+                            write(3,*) Etol,GAM !escribo los valores E vs R
+                            write(*,*) Etol,GAM ,"k=2"
+                            bandera_imprimir=2
+                            call Rungekutta_anillo
+                        end if              
+                        if(k.eq.3) then
+                            write(5,*) Etol,GAM !escribo los valores E vs R
+                            write(*,*) Etol,GAM ,"k=3"
+                            bandera_imprimir=3
+                            call Rungekutta_anillo
+                            exit
+                        end if
+                        
                         call Rungekutta_anillo
                         
-                    end if              
-                    if(k.eq.3) then
-                        write(5,*) Ecm,GAM !escribo los valores E vs R
-                        write(*,*) Ecm,GAM ,"k=3"
-                        bandera_imprimir=3
-                        call Rungekutta_anillo
-                        exit
+                        Fant=F
+                        En_ant=En
+                        j=0
+                        En=En+Estep
+                    else if(j.gt.5d4)then
+                        k=k+1
+                        write(*,*) "la biseccion no converge satisfactoriamente"
+                        
+                        Etol=((real(M_cm)**2)/(f_(X,P,T)*(R1**2+R2**2)) &
+                        +  real(M_cm)*GAM/f_(X,P,T)  &
+                        +  ((GAM**2)/(f_(X,P,T)*4d0))*(R1**2+R2**2)&
+                        -(Ue1d+Ue2d)/(g_(P,T)) + En)*R**2
+                        write(*,*) "un aproximado del autovalor es: ", En+Etol
+                        if(k.eq.1) then
+                            write(4,*) Etol,GAM !escribo los valores E vs R
+                            write(*,*) Etol,GAM ,"k=1"
+                            bandera_imprimir=1
+                            call Rungekutta_anillo
+                        end if
+                        if(k.eq.2) then
+                            write(3,*) Etol,GAM !escribo los valores E vs R
+                            write(*,*) Etol,GAM,"k=2"
+                            bandera_imprimir=2
+                            call Rungekutta_anillo
+                            
+                        end if              
+                        if(k.eq.3) then
+                            write(5,*) Etol,GAM !escribo los valores E vs R
+                            write(*,*) Etol,GAM ,"k=3"
+                            bandera_imprimir=3
+                            call Rungekutta_anillo
+                            exit
+                        end if
+                        Fant=F
+                        En=En+Estep
+                        
+                        j=0
                     end if
-                    Fant=F
-                    En=En+Estep
                     
-                    j=0
+                else
+                    Fant=F
+                    En_ant=En
+                    En=En+Estep
                 end if
-                
-            else
-                Fant=F
-                En_ant=En
-                En=En+Estep
-            end if
-        End Do
-        
-    End do
+            End Do
+            
+        End do
+    end do 
     close(1)
     close(2)
     close(3)

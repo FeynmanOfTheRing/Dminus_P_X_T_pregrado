@@ -3,14 +3,14 @@ module subrutinas_funciones_parametros
     implicit none
     real(8),parameter ::PI=4*atan(1.), GAM = 0,h=0.06,m_o=9.1d-31!0.06 radianes !parametros del problema
     real(8),parameter :: S11=1.16d-3,S12=-3.7d-4
-    real(8):: d=0d0, R1=1, R2=1,dseta=1d20,R
-    real(8):: mu,Ecm,Er,En,En_ant,Uee,Ue1d,Ue2d,phi,tol,Fdospi,Fcero,F,Fant,yini!masa reducida, energías, potenciales,to
-    real(8)::X=0,P=0d0,Pfin,Pini,Pstep,T=4d0
+    real(8):: d=2d0, R1=1, R2=1,dseta=1d0,R,Rfin=15,Rini=0.5,Rstep=0.01 
+    real(8):: mu,Etol,Er,En,En_ant,Uee,Ue1d,Ue2d,phi,tol,Fdospi,Fcero,F,Fant,yini!masa reducida, energías, potenciales,to
+    real(8)::X=0,P=30d0,Pfin,Pini,Pstep,T=4d0
     real(16)::cte_norm
     real(8),dimension(3):: vector_entra,vector_sale!vectores que utilizo para hacer RK4
     real(8),DIMENSION(420)::psi_value
     INTEGER :: i,j,k,bandera_imprimir,l
-    INTEGER :: M_cm=1 !!número cuántico de centro de masa,
+    INTEGER :: M_cm=3 !!número cuántico de centro de masa,
     
     contains
     real(8) function rho(P)
@@ -115,10 +115,9 @@ subroutine EDO(vector_in,vector_out)!campo vectorial del problema para realizar 
     
     call potential(vector_in(1),Uee)
     
-    
     vector_out(1)=1
     vector_out(2)=vector_in(3)
-    vector_out(3)= ( f_(X,P,T)/((-1d0)*mu) )*( En-(Uee+Ue1d+Ue2d)/g_(P,T) )*vector_in(2)
+    vector_out(3)= ( f_(X,P,T)/((-1d0)*mu) )*( En-(Uee)/g_(P,T) )*vector_in(2)
     vector_out=h*vector_out
 end subroutine
 !***************Biseccion***************!
@@ -162,10 +161,12 @@ subroutine Rungekutta_anillo
             i=i+1
             psi_value(i)=vector_sale(2)
             
-            call integration_simpson(cte_norm)
+            
         END DO
+        call integration_simpson(cte_norm)
         WRITE(*,*) cte_norm
     end if
+    
     
     !!impersión
     !vector_entra(1)=-2*PI   !condiciones iniciales
@@ -227,7 +228,7 @@ program D_minus_P_T_X
     dseta=dseta*H_p(P)
     d=d*H_p(P)
     
-    tol=1e-8
+    tol=1e-9
     vector_sale=0                  !inicio el vector que sale
     yini=0.001d0
     Fcero=yini
@@ -238,32 +239,35 @@ program D_minus_P_T_X
     l=0
     bandera_imprimir=0
 
-    write(*,*) En,Efin,"energía inicial y final"
-    Eini=0d0                !energías inicial y final
-    Efin=12d0
+    
+    Eini=-2d0                !energías inicial y final
+    Efin=10d0
                  !aquí guardo la función para graficar
     open(unit=1,file ="funcion_base.txt")
-    open(unit=2,file="psi.txt")
+    open(unit=2,file="primer_exi.txt")
     open(unit=4, file="energias.txt")
     open(unit=3, file="energias_2.txt")  
     OPEN(unit=5, file="energias_3.txt")
     OPEN(unit=7, file="segundo_exi.txt")
-    Do l=1,5
-        
+    R=Rini
+    Do While (R.lt.Rfin)
+        if (R.gt.1d0) then
+            Rstep=0.1d0
+        end if
         bandera_imprimir=0
-        R=real(l)
-        
+        R=(R/rho(P))+Rstep
         R=R*rho(P)
         R1=R
         R2=R
         mu = (1d0/(R1)**2d0)+(1d0/(R2)**2d0)  !masa reducida
-        Ue1d = -2./sqrt(R1**2+dseta**2)!potenciales con la impureza
-        Ue2d = -2./sqrt(R2**2+(d-dseta)**2)
+        Ue1d = 2./sqrt(R1**2+dseta**2)!potenciales con la impureza
+        Ue2d = 2./sqrt(R2**2+(d-dseta)**2)
         ndata=int(Efin-Eini)*1d4 !# de datos de energía
         Estep=(Efin-Eini)/real(ndata)  !paso
         
-        En=Eini
         
+        En=Eini
+        write(*,*) En,Efin,"energía inicial y final"
         k=0
         j=0
         Do while(En.le.Efin) !Ciclo que varia las energías
@@ -277,33 +281,34 @@ program D_minus_P_T_X
                 call Rungekutta_anillo
                 if(abs(Fcero-Fdospi) .lt. tol) then
                     k=k+1
-                    Ecm=((real(M_cm)**2)/(f_(X,P,T)*(R1**2+R2**2)) &
+                    Etol=((real(M_cm)**2)/(f_(X,P,T)*(R1**2+R2**2)) &
                     +  real(M_cm)*GAM/f_(X,P,T)  &
                     +  ((GAM**2)/(f_(X,P,T)*4d0))*(R1**2+R2**2)&
-                    -(Ue1d+Ue2d)/(g_(P,T)) + En)*(R**2)
-                    WRITE(*,*) "E+Ecm", Ecm,En
-
+                    -(Ue1d+Ue2d)/(g_(P,T)) + En)!!*(R**2)
+                    WRITE(*,*) "E y Er", Etol,En
+                    WRITE(*,*) "Potenciales",Ue1d+Ue2d
                     if(k.eq.1) then
-                        write(4,*) Ecm,R !escribo los valores E vs R
-                        write(*,*) Ecm,R ,"k=1"
+                        write(4,*) Etol,R !escribo los valores E vs R
+                        write(*,*) Etol,R ,"k=1"
                         bandera_imprimir=1
                         call Rungekutta_anillo
+                        exit !!OJO CON ESTO MANITO
                     end if
                     if(k.eq.2) then
-                        write(3,*) Ecm,R !escribo los valores E vs R
-                        write(*,*) Ecm,R ,"k=2"
+                        write(3,*) Etol,R !escribo los valores E vs R
+                        write(*,*) Etol,R ,"k=2"
                         bandera_imprimir=2
                         call Rungekutta_anillo
                     end if              
                     if(k.eq.3) then
-                        write(5,*) Ecm,R !escribo los valores E vs R
-                        write(*,*) Ecm,R ,"k=3"
+                        write(5,*) Etol,R !escribo los valores E vs R
+                        write(*,*) Etol,R ,"k=3"
                         bandera_imprimir=3
                         call Rungekutta_anillo
                         exit
                     end if
                     
-                    call Rungekutta_anillo
+                    !call Rungekutta_anillo
                     
                     Fant=F
                     En_ant=En
@@ -313,27 +318,27 @@ program D_minus_P_T_X
                     k=k+1
                     write(*,*) "la biseccion no converge satisfactoriamente"
                     
-                    Ecm=((real(M_cm)**2)/(f_(X,P,T)*(R1**2+R2**2)) &
+                    Etol=((real(M_cm)**2)/(f_(X,P,T)*(R1**2+R2**2)) &
                     +  real(M_cm)*GAM/f_(X,P,T)  &
                     +  ((GAM**2)/(f_(X,P,T)*4d0))*(R1**2+R2**2)&
                     -(Ue1d+Ue2d)/(g_(P,T)) + En)*R**2
-                    write(*,*) "un aproximado del autovalor es: ", Ecm
+                    write(*,*) "un aproximado del autovalor es: ", Etol
                     if(k.eq.1) then
-                        write(4,*) Ecm,R !escribo los valores E vs R
-                        write(*,*) Ecm,R ,"k=1"
+                        write(4,*) Etol,R !escribo los valores E vs R
+                        write(*,*) Etol,R ,"k=1"
                         bandera_imprimir=1
                         call Rungekutta_anillo
                     end if
                     if(k.eq.2) then
-                        write(3,*) Ecm,R !escribo los valores E vs R
-                        write(*,*) Ecm,R,"k=2"
+                        write(3,*) Etol,R !escribo los valores E vs R
+                        write(*,*) Etol,R,"k=2"
                         bandera_imprimir=2
                         call Rungekutta_anillo
                         
                     end if              
                     if(k.eq.3) then
-                        write(5,*) Ecm,R !escribo los valores E vs R
-                        write(*,*) Ecm,R ,"k=3"
+                        write(5,*) Etol,R !escribo los valores E vs R
+                        write(*,*) Etol,R ,"k=3"
                         bandera_imprimir=3
                         call Rungekutta_anillo
                         exit
